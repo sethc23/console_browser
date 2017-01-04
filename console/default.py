@@ -382,21 +382,25 @@ class Console:
                             self.this_pg_notes.pop( i)
                             break
             elif is_repeat:
+                """
+                last page pg_notes
 
-                is_repeat_idx           =   _val if _val!=-1 else pg_num-1
+                if not at page: goto_page(start)
+
+                """
+                is_repeat_idx           =   self.path_history[-1]['page'] - 1
                 _pg_key                 =   'page%05d' % is_repeat_idx
-                print is_repeat_idx,_pg_key
-                self.pg_notes           =   self.pg_notes if self.pg_notes.has_key(_pg_key) else {}
 
-                from IPython.core.debugger import Tracer
-                Tracer()() #this one triggers the debugger
+                self.pg_notes           =   self._attr[notes_idx_col]
 
                 for it in self.pg_notes[_pg_key]:
                     update(                 it)
                 return
 
-            if not self.this_pg_notes.count(_val):
-                self.this_pg_notes.append(  _val)
+            if not self.this_pg_notes.count(_val)==0:
+                return
+
+            self.this_pg_notes.append(  _val)
             self.pg_notes[pg_key]       =   self.this_pg_notes
             self._attr[notes_idx_col]   =   self.pg_notes
 
@@ -407,7 +411,7 @@ class Console:
                                                 ,"_attr='" + self._attr + "'::json"
                                                 ,"WHERE uid=%s;" % self.RECORD[uid_col]
                                             ]) + '\n'
-            print '\n'.join(                ['\t'+it for it in upd_qry.split('\n')])
+            #print '\n'.join(                ['\t'+it for it in upd_qry.split('\n')])
             self.T.to_sql(                  upd_qry )
             self.df.set_value(              self._idx, self.attr_col, self._attr)
             self.RECORD                 =   self.df.ix[self._idx,:]
@@ -505,18 +509,15 @@ class Console:
                 if len(idx)==1:
                     idx.append(                 self.exts.get_page_count())
                 idx                         =   [int(it) for it in idx]
-
-                orig_res = res
-                for _loop in range(idx[0],idx[1]+1):
-                    print '_loop:',_loop
-                    LOOP                    =   iter_loop(orig_res)
+                start,end                   =   idx[0],idx[1]+1
+                orig_start                  =   self.pgnum
+                self.exts.goto_page(            start)
+                for _loop in range(start,end):
+                    LOOP                    =   iter_loop(res)
                     if LOOP==False:             return
                     LOOP                    =   iter_loop('n')
                     if LOOP==False:             return
-
-
-                print idx
-                raise SystemError
+                self.exts.goto_page(            orig_start)
 
             else:
 
