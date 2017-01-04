@@ -1,33 +1,97 @@
 
+"""
+
+"""
+
+from extensions import *
+
+def debug_script(src, pm=False, globs=None):
+    "Debug a test script.  `src` is the script, as a string."
+    import pdb
+
+    # Note that tempfile.NameTemporaryFile() cannot be used.  As the
+    # docs say, a file so created cannot be opened by name a second time
+    # on modern Windows boxes, and execfile() needs to open it.
+    srcfilename = tempfile.mktemp(".py", "doctestdebug")
+    f = open(srcfilename, 'w')
+    f.write(src)
+    f.close()
+
+    try:
+        if globs:
+            globs = globs.copy()
+        else:
+            globs = {}
+
+        if pm:
+            try:
+                execfile(srcfilename, globs, globs)
+            except:
+                print sys.exc_info()[1]
+                pdb.post_mortem(sys.exc_info()[2])
+        else:
+            # Note that %r is vital here.  '%s' instead can, e.g., cause
+            # backslashes to get treated as metacharacters on Windows.
+            pdb.run("execfile(%r)" % srcfilename, globs, globs)
+
+    finally:
+        os.remove(srcfilename)
+
 class Console:
-    
+    """
+        Debug Logs:
+
+            /home/kali/BD_Scripts/html/webdrivers/chrome/profiles/default/chromedriver.log
+            /home/kali/BD_Scripts/html/webdrivers/chrome/profiles/default/chrome_debug.log
+            /home/kali/BD_Scripts/html/webdrivers/chrome/profiles/default/net-log.log
+
+
+            /home/kali/BD_Scripts/html/webdrivers/chrome/profiles/default'
+
+            /home/kali/BD_Scripts/html/webdrivers/chrome/profiles/default/net-log.log'
+            --log-path=/home/kali/BD_Scripts/html/webdrivers/chrome/profiles/default/chromedriver.log'
+            'load-extension=/home/kali/BD_Scripts/html/webdrivers/chrome/extensions/custom_js/poakhlngfciodnhlhhgnaaelnpjljija/2.1.40_0',
+
+            br.webdriver_config.dc['chromeOptions']['prefs']['download.default_directory']
+                'savefile.default_directory': '/home/kali/BD_Scripts/html/webdrivers/chrome/profiles/default/DOWNLOADS'
+            br.webdriver_config.dc['chromeOptions']['prefs']['savefile.default_directory']
+                '/home/kali/BD_Scripts/html/webdrivers/chrome/profiles/default/DOWNLOADS'
+
+        check_args = ['user-data-dir','log-net-log']
+        for it in br.webdriver_config.dc['chromeOptions']['args']:
+            try:
+                k,v = it.split('=')
+                if check_args.count(k):
+                    print '%s = %s' % (k.strip('- '),v.strip('- '))
+            except:
+                pass
+
+    """
+
     def __init__(self,_parent,kwargs={}):
         self                                =   _parent.T.To_Sub_Classes(self,_parent)
-        self.T                              =   _parent.T
+        T = self.T                          =   _parent.T
+
         config_defaults                     =   {
-                                                'notes_fpath'       :   self.T.os.getcwd() + '/logs/console_notes'
+                                                'notes_fpath'       :   T.os.path.abspath(T.os.path.join(
+                                                                            T.os.path.dirname(__file__)
+                                                                            ,'../logs/console_notes'))
                                                 ,'select_query'     :   ''
                                                 ,'update_query'     :   ''
-                                                ,'sort_select_by'   :   ''
+                                                ,'sort_select_by'   :   'uid'
                                                 ,'date_format'      :   '%m/%d/%y'
                                                 ,'skip_marked'      :   True
                                                 ,'mark_skipped'     :   True
                                                 ,'uid_col'          :   'uid'
-                                                ,'url_col'          :   '_url'
+                                                ,'attr_col'         :   '_attr'
+                                                ,'url_col'          :   'fpath'
+                                                ,'notes_idx_col'    :   'page_notes'
+                                                ,'url_substitution' :   ('/home/ub2/ARCHIVE','http://10.0.0.52:14382/files')
                                                 ,'npages_col'       :   'npages'
                                                 ,'regex_fpath'      :   ''
                                                 ,'val_dict'         :   {}
-                                                ,'current_file'     :   ''
+                                                ,'_path'            :   ''
                                                 ,'jump_uid'         :   ''
-
-                                                ,'jump_uid'         :   ''
-                                                ,'jump_uid'         :   ''
-                                                ,'jump_uid'         :   ''
-                                                ,'jump_uid'         :   ''
-                                                ,'jump_uid'         :   ''
-                                                ,'jump_uid'         :   ''
-
-
                                                 }
         console_config                      =   {} if not hasattr(self.T,'console_config') else self.T['console_config']
         if type(console_config)==dict:
@@ -38,30 +102,28 @@ class Console:
             print(                              'Unrecognized format of "console_config":',str(console_config))
         ALL_CONFIG_PARAMS                   =   config_defaults
         self._config(                           ALL_CONFIG_PARAMS)
-    
+        self.exts                           =   PDF_Viewer(self)
+        self.path_history                   =   []
+
     def __update__(self,upd_dict):
         for k,v in upd_dict.iteritems():
             self.__dict__.update(               {k:v})
 
-    def _config(self,kwargs):
-        self.__update__(                        kwargs)
-        locals().update(                        **self.__dict__)
-        globals().update(                       **self.__dict__)
-        locals().update(                        **self.T.__dict__)
-        globals().update(                       **self.T.__dict__)
+    def _load_dataframe(self):
+        assert self.select_query,'Missing value for "select_query":' + self.select_query
+        #assert self.update_query,'Missing value for "update_query":' + self.update_query
+        df                                  =   self.T.pd.read_sql(self.select_query,self.T.eng)
+        if self.sort_select_by:    df       =   df.sort_values(self.sort_select_by).reset_index(drop=True)
 
-        assert select_query,'Missing value for "select_query":' + select_query
-        assert update_query,'Missing value for "update_query":' + update_query
+        df[self.url_col]                    =   df[self.url_col].map(lambda s: s.replace(*self.url_substitution))
+        df[self.attr_col]                   =   df[self.attr_col].map(lambda d:
+                                                    None if not d else self.T.json.dumps(d,indent=4,sort_keys=True)).tolist()
+        # df['effective_date']                = df.effective_date.map(lambda s: None if s.__class__.__name__=='NaTType' else s.strftime('%m/%d/%y'))
 
-        df                                  =   pd.read_sql(select_query,eng)
-        if sort_select_by:    df            =   df.sort_values(sort_select_by).reset_index(drop=True)
-        
-        # df['effective_date'] = df.effective_date.map(lambda s: None if s.__class__.__name__=='NaTType' else s.strftime('%m/%d/%y'))
-
-        if skip_marked and os.path.exists(notes_fpath):
-            print('\nskipping files marked in %s\n' % notes_fpath)
-            fpath_list,idx_list             =   df[url_col_name].tolist(),[]
-            with open(notes_fpath,'r') as f: 
+        if self.skip_marked and self.T.os.path.exists(self.notes_fpath):
+            print('\nskipping files marked in %s\n' % self.notes_fpath)
+            fpath_list,idx_list             =   df[self.url_col].tolist(),[]
+            with open(self.notes_fpath,'r') as f:
                 x                           =   f.read().split('\n')
             for l in x:
                 try:
@@ -72,108 +134,331 @@ class Console:
                 except:
                     pass
             df                              =   df[df.index.isin(idx_list)==False].reset_index(drop=True)
-        if sort_select_by:    df            =   df.sort_values(sort_select_by).reset_index(drop=True)
+        if self.sort_select_by:    df       =   df.sort_values(self.sort_select_by).reset_index(drop=True)
         self.df                             =   df
+
+    def _config(self,kwargs):
+        self.__update__(                        kwargs)
+        locals().update(                        **self.__dict__)
+        globals().update(                       **self.__dict__)
+        locals().update(                        **self.T.__dict__)
+        globals().update(                       **self.T.__dict__)
+
+        self.shell                          =   self.T.run_cmd('which zsh')
+        self.script_dir                     =   __file__[:__file__.rfind('/')]
+
+        self._load_dataframe()
+
         if regex_fpath:
-            with open(regex_fpath,'r') as f: 
+            with open(regex_fpath,'r') as f:
                 self.regex_list             =   f.read().split('\n')
         self.T.br.window.implicitly_wait(       2)
 
+    def reset_console(self,browser_class_obj):
 
-    def run_review(self,debug=True):
-        def get_ocr(pg_num):
-            c                               =   ';\n'.join([
-                                                        'cd /home/kali/PROJECTS/INTARCIA/scripts',
-                                                        'pdftotext \
-                                                            -f %(pg_num)s \
-                                                            -l %(pg_num)s \
-                                                            review/tmp.pdf - 2>&1' % {'pg_num':pg_num},
-                                                    ])
-            ocr_content                     =   ' '.join(get_ipython().getoutput(u'/usr/bin/zsh -c "' + c + '"'))
-            return                              ocr_content
-        def gen_and_goto_pg(file_num,pg_num=1,uid=None):
-            
-            if uid or jump_uid:
-                jump_uid                    =   jump_uid if not uid else uid
-                nf                          =   pd.read_sql(jump_query % jump_uid,eng)
-                r                           =   nf.ix[0,:]
-                new_file                    =   r['fpath']
-            elif file_num>=len(file_list):
+        browser_class_obj.cs.__init__(browser_class_obj)
+
+    def run_review(self,debug=False):
+        # def get_ocr(pg_num):
+        #     self.pg_num                     =   pg_num
+        #     c                               =   ';\n'.join([
+        #                                                 'cd /home/kali/PROJECTS/INTARCIA/scripts',
+        #                                                 'pdftotext \
+        #                                                     -f %(pg_num)s \
+        #                                                     -l %(pg_num)s \
+        #                                                     review/tmp.pdf - 2>&1' % self.__dict__,
+        #                                             ])
+        #     ocr_content                     =   ' '.join(get_ipython().getoutput(
+        #                                                  u'%(shell)s -c "' % self.__dict__ + c + '"'))
+        #     return                              ocr_content
+        def change_path():
+            pass
+        def iter_loop(_input):
+            res                             =   _input
+            if   len(res)==0:   pass
+            elif len(res)==1:
+                if   res=='q':  return False
+                elif res=='m':
+                    if self._path:
+                        with open(self.notes_fpath,'a') as f:        f.write(self._path+'\n')
+                        if debug:   print(          'marked '+self.notes_fpath)
+                elif res=='P':
+                    self.jump_uid           =   None
+                    z                       =   idx_list.index(self._idx) - 1
+                    if z < 0:
+                        print(                  "This is the First RECORD.")
+                    else:
+                        self._idx           =   idx_list[ z ]
+                        RUN                 =   gen_and_goto_pg(path_history='remove')
+                        new_page            =   True
+                        if debug:               print(self._path)
+                elif res=='N':
+                    if self.mark_skipped:
+                        with open(self.notes_fpath,'a') as f:    f.write(self._path+'\n')
+                    self.jump_uid           =   None
+                    z                       =   idx_list.index(self._idx) + 1
+                    if z >= len(idx_list):
+                        print(                  "This is the Last RECORD.")
+                    else:
+                        self._idx           =   idx_list[ z ]
+                        RUN                 =   gen_and_goto_pg(path_history='add')
+                        new_page            =   True
+                        if debug:               print(self._path)
+
+                elif res=='p':
+                    self.pgnum              =   self.exts.goto_prev_page()
+                    self.path_history.append(   {'path':self._path,'page':self.pgnum})
+                elif res=='n':
+                    self.pgnum              =   self.exts.goto_next_page()
+                    self.path_history.append(   {'path':self._path,'page':self.pgnum})
+                elif res=='e':
+                    self.pgnum              =   self.exts.goto_last_page()
+                    self.path_history.append(   {'path':self._path,'page':self.pgnum})
+                elif res=='f':
+                    self.pgnum              =   self.exts.goto_first_page()
+                    self.path_history.append(   {'path':self._path,'page':1})
+                elif res=='L':
+                    rotation                =   self.exts.set_rotation('left')
+                    update(                     'rotation=%d'%rotation,is_prop=True)
+                elif res=='R':
+                    rotation                =   self.exts.set_rotation('right')
+                    update(                     'rotation=%d'%rotation,is_prop=True)
+                elif res=='r':
+                    update(                     -1,is_repeat=True)
+                elif res=='?':
+                    print(                      ' ')
+                    print(                      sorted_dict_str(RECORD.to_dict(),level=1))
+                    # print(                      qry)
+                    print(                      ' ')
+                elif res=='o':  print(          self.exts.get_page_text_content())
+                # elif res=='D':
+                    # print                       qry
+                    # if self.pg_notes:
+                    #     if debug:   print(          qry)
+                    #     else:
+                    #         try:
+                    #             print               qry
+                    #             to_sql(             qry)
+                    #             print(              'DB updated')
+                    #             self.pg_notes   =   []
+                    #             self.jump_uid   =   None
+                    #             self._idx  +=   1
+                    #             self.pg_num     =   1
+                    #             RUN             =  gen_and_goto_pg(path_history='add')
+                    #         except:
+                    #             print(              '\nQRY FAILED: %s\n' % qry)
+
+            # elif res[:3]=='re ':
+                #     """
+                #         test single
+                #         test all
+                #         append regex
+                #         edit regex
+
+                #     """
+                #     print(                          ' ')
+                #     r                           =   res[3:]
+                #     if   r    =='?':
+                #         for it in regex_list:
+                #             print(                  re.search(r'%s' % it,OCR))
+                #     elif r[:2]=='l ':
+                #         pt                      =   0
+                #         for it in regex_list:
+                #             print(                  '%s: %s' % (str(pt),it))
+                #             pt                 +=   1
+                #     elif r[:2]=='a ':
+                #         _regex                  =   r[2:]
+                #         regex_list.append(          _regex)
+                #         with open(regex_fpath,'w') as f:        f.write('\n'.join(regex_list))
+                #         print(                      'regex appended')
+                #     elif r[:2]=='d ':
+                #         _idx                    =   int(r[2:])
+                #         z                       =   regex_list.pop(_idx)
+                #         with open(regex_fpath,'w') as f:        f.write('\n'.join(regex_list))
+                #         print(                      'dropped regex: %s' % z)
+                #     elif r[:2]=='t ':
+                #         _regex                  =   r[2:]
+                #         print(                      re.search(r'%s' % _regex,OCR))
+
+            elif res[0]=='!':
+                try:
+                    print                           '\n'
+                    exec res[1:] in globals(),locals()
+                    print                           '\n'
+                except Exception as e:
+                    print "ERROR:"
+                    print type(e)       # the exception instance
+                    print e.args        # arguments stored in .args
+                    print e             # __str__ allows args to be printed directly
+                    print '\n'
+
+            elif res[1]==' ' \
+                and res[2:].strip(' '):
+                _val                        =   res[2:]
+
+                if   res[0]=='j':
+                    self.jump_uid           =   _val if not _val.isdigit() else int(_val)
+                    RUN                     =   gen_and_goto_pg(path_history='add')
+                    new_page                =   True
+
+                elif res[0]=='i':
+                    update(                 _val,is_note=True)
+
+        def gen_and_goto_pg(path_history='add'):
+            if hasattr(self,'jump_uid') and self.jump_uid:
+                nf                          =   pd.read_sql(self.jump_query % self.jump_uid,eng)
+                nf[self.url_col]            =   nf.fpath.map(lambda s: s.replace(*self.url_substitution))
+                self.RECORD                 =   nf.ix[idx_list[0],:]
+                self.new_path               =   self.RECORD[ self.url_col ]
+            elif self._idx>=len(path_list):
                 print(                          "END OF FILES")
                 return
             else:
-                new_file                    =   file_list[file_num]
-                r                           =   df.ix[file_idx_dict[new_file],:]
+                self.new_path               =   path_list[self._idx]
 
-            if current_file!=new_file:
-                print(                          'current_file: ' + current_file + ' NEQ new_file: ' + new_file)
-                val_dict                    =   dict(zip(val_cols,['' for i in range(len(val_cols))]))
+            if self._path!=self.new_path:
+                self.RECORD                 =   df.ix[self.path_idx_dict[self.new_path],:]
+                self._attr                  =   self.RECORD[attr_col]
+                self._path                  =   self.RECORD[url_col]
+                br.open_page(                   self._path)
+                if path_history=='add':
+                    self.path_history.append(   {'path':self._path,'page':1})
+                elif path_history=='remove':
+                    self.path_history.pop(      -1)
 
-            printed                         =   False
-            for k,v in val_dict.iteritems():
-                if debug:       print(          it,r[it])
-                if type(r[k])!=T.NoneType:
-                    if not printed:
-                        print(                  '\n')
-                        printed             =   True
-                    if current_file!=new_file:
-                        val_dict[k]         =   r[k]
-                    print(                      '\t%s: %s' % (k,r[k]))
-            if printed:         print(          '\n')
+            return
+        def sorted_dict_str(_dict,max_key_str_len=0,level=0):
+            if type(_dict)==str:
+                _dict                           =   json.loads(_dict)
+            if max_key_str_len:
+                k_v_str                         =   '%-'+str(max_key_str_len+4)+'s : %s'
+            else:
+                k_v_str                         =   '%-'+str(max([len(k) for k in _dict.keys()])+4)+'s : %s'
+            res                                 =   ['\n']
+            for k,v in sorted(_dict.items()):
+                if type(v)==dict:
+                    res.append(                     k_v_str%(k,sorted_dict_str(v,level=level+1)))
+                elif type(v)==str:
+                    try:
+                        json.loads(                 v)
+                        res.append(                 k_v_str%(k,sorted_dict_str(v,level=level+1)))
+                    except:
+                        res.append(                 k_v_str%(k,v))
+                else:
+                    res.append(                     k_v_str%(k,v))
+            indent_level                        =   str('\t' * level)
+            indent_level_new_line               =   '\n%s' % indent_level
+            _return                             =   indent_level_new_line.join(res) + indent_level + '\n'
+            return _return
+        def update(_val,**kwargs):
+            if not _val:                    return
+            is_note                     =   False if not kwargs.has_key('is_note') else kwargs['is_note']
+            is_prop                     =   False if not kwargs.has_key('is_prop') else kwargs['is_prop']
+            is_repeat                   =   False if not kwargs.has_key('is_repeat') else kwargs['is_repeat']
 
-            c                               =   ';\n'.join([
-                                                        'cd /home/kali/PROJECTS/INTARCIA/scripts',
-                                                        'pdftk %(fpath)s cat %(pg_num)s output review/tmp.pdf' \
-                                                            % {'fpath':new_file,'pg_num':pg_num},
-                                                        # 'curl -s %s > ./tmp.pdf' % new_file,
-                                                        # 'pdftohtml -f %(pg_num)s -l %(pg_num)s -q ./tmp.pdf ./tmp.html' % {'pg_num':pg_num},
-                                                    ])
-            get_ipython().system(               u'/usr/bin/zsh -c "' + c + '"')
-            br.open_page(                       'http://192.168.101.129/share/scripts/review/tmp.pdf')
+            self._attr                  =   self.RECORD[attr_col] if not hasattr(self,'_attr') else self._attr
+            self._attr                  =   {} if not self._attr else self._attr
+            self._attr                  =   self._attr if type(self._attr)==dict else json.loads( self._attr )
+            pg_num                      =   self.exts.get_page_num()
+            pg_key                      =   'page%05d' % pg_num
+            self.pg_notes               =   {} if not self._attr.has_key(notes_idx_col) else self._attr[notes_idx_col]
+            self.pg_notes               =   self.pg_notes if type(self.pg_notes)==dict else json.loads( self.pg_notes )
+            self.this_pg_notes          =   [] if not self.pg_notes.has_key(pg_key) else self.pg_notes[pg_key]
+            try:
+                self.this_pg_notes      =   self.this_pg_notes if type(self.this_pg_notes)==list else eval( self.this_pg_notes )
+            except:
+                self.this_pg_notes      =   []
 
-            #
-            # ATTEMPT TO CHANGE ZOOM TO 'fit-to-page'
-            #
-            # if not hasattr(br,'handle'):
-            #     br.handle = br.window.current_window_handle
-            # br.window.switch_to_window(br.handle)
-            # br.window.switch_to.frame(br.execute("return frames.length;") - 1)
-            # br.window.switch_to_active_element()
-            # br.window.execute_script('window.viewer.zoomManager_.viewport_.fitToPage();')
-            #
+            if is_note:
+                pass
+            elif is_prop or str(_val).count('='):
+                k,v                     =   _val.split('=')
+                idx                     =   -1
+                for i in range(len(self.this_pg_notes)):
+                    it                  =   self.this_pg_notes[i]
+                    if it.count('='):
+                        _k,_v=it.split('=')
+                        if k==_k:
+                            self.this_pg_notes.pop( i)
+                            break
+            elif is_repeat:
 
-            ocr_content                     =   get_ocr(pg_num)
-            return                              new_file,ocr_content
+                is_repeat_idx           =   _val if _val!=-1 else pg_num-1
+                _pg_key                 =   'page%05d' % is_repeat_idx
+                print is_repeat_idx,_pg_key
+                self.pg_notes           =   self.pg_notes if self.pg_notes.has_key(_pg_key) else {}
+
+                from IPython.core.debugger import Tracer
+                Tracer()() #this one triggers the debugger
+
+                for it in self.pg_notes[_pg_key]:
+                    update(                 it)
+                return
+
+            if not self.this_pg_notes.count(_val):
+                self.this_pg_notes.append(  _val)
+            self.pg_notes[pg_key]       =   self.this_pg_notes
+            self._attr[notes_idx_col]   =   self.pg_notes
+
+            if type(self._attr)==dict:
+                self._attr              =   json.dumps( self._attr, indent=4, sort_keys=True)
+            upd_qry                     =   '\n' + '\n'.join([
+                                                self.qry_start.lstrip(' ')
+                                                ,"_attr='" + self._attr + "'::json"
+                                                ,"WHERE uid=%s;" % self.RECORD[uid_col]
+                                            ]) + '\n'
+            print '\n'.join(                ['\t'+it for it in upd_qry.split('\n')])
+            self.T.to_sql(                  upd_qry )
+            self.df.set_value(              self._idx, self.attr_col, self._attr)
+            self.RECORD                 =   self.df.ix[self._idx,:]
+            self._attr                  =   self.RECORD[attr_col]
+
+        def sig_int(signal, frame):
+            self.RUN_LOOP                   =   False
+        self.T.signal.signal(                   self.T.signal.SIGINT, sig_int)
 
         locals().update(                        **self.__dict__)
         globals().update(                       **self.__dict__)
         locals().update(                        **self.T.__dict__)
         globals().update(                       **self.T.__dict__)
 
+        self._load_dataframe()
+
         idx_list                            =   df.index.astype(int).tolist()
+        col_list                            =   df.columns.astype(str).tolist()
         uid_list                            =   df[ uid_col ].astype(str).tolist()
-        file_list                           =   df[ url_col ].astype(str).tolist()
-        # date_list                           =   df.effective_date.astype(str).tolist()
-        pgcnt_list                          =   df[ npages_col ].astype(int).tolist()
-        file_idx_dict                       =   dict(zip(file_list,idx_list))
-        file_uid_dict                       =   dict(zip(file_list,uid_list))
-        # file_date_dict                      =   dict(zip(file_list,date_list))
-        file_pgcnt_dict                     =   dict(zip(file_list,pgcnt_list))
-        file_num,pg_num,qry,current_file    =   0,1,'',''
-        qry_start,qry_vals                  =   "update cp_do set",[]
-        jump_uid                            =   None
-        current_file, OCR                   =   gen_and_goto_pg( file_num, pg_num )
-        get_ipython().system(                   u'/usr/bin/zsh -c "date --iso-8601=seconds >> %s"' % notes_fpath)
+        path_list                           =   df[ url_col ].astype(str).tolist()
+        attr_list                           =   df[ attr_col ].tolist()
+        self.path_uid_dict                  =   dict(zip(path_list,uid_list))
+        self.path_idx_dict                  =   dict(zip(path_list,idx_list))
+        self.path_attr_dict                 =   dict(zip(path_list,attr_list))
 
-        while True:
 
-            qry                             =   ' '.join([
-                                                        qry_start,
-                                                        ',\n\t'.join(["%s = '%s'" % (k,v) 
-                                                                     for k,v in val_dict.iteritems() if v]),
-                                                        "\nwhere uid='%s';" % file_uid_dict[current_file],
-                                                    ])
+        current                             =   self.exts.get_page_path()
+        self._idx                           =   df.first_valid_index().tolist() if not path_list.count(current) else path_list.index(current)
+        self.RECORD                         =   df.ix[self._idx,:]
+        self._attr                          =   self.RECORD[attr_col]
+        # self._path                          =   path_list[self._idx]
+
+        self.qry_clean                      =   self.T.re.sub(r'[\s\n\t][\s\t\n]+',' ',self.select_query.lower())
+        self.tbl_name                       =   self.T.re.sub(r'(.*) from ([^ ]+)(.*)','\\2',self.qry_clean)
+        self.qry_start                      =   " UPDATE " + self.tbl_name + " SET "
+        self.jump_query                     =   self.select_query + ' AND uid = %d ; ' if not hasattr(self,'jump_query') or not self.jump_query else self.jump_query
+        self.jump_uid                       =   None
+        RUN                                 =   gen_and_goto_pg(path_history='add')
+        get_ipython().system(                   u'%(shell)s -c "cd %(script_dir)s; date --iso-8601=seconds >> %(notes_fpath)s"' % self.__dict__)
+
+        # signal.pause()
+
+        self.RUN_LOOP                       =   True
+        new_page                            =   True
+        print('\n\nStarting Loop.\n')
+        while self.RUN_LOOP==True:
+
+            print(                              sorted_dict_str(self.RECORD.to_dict(),level=1))
+
             res                             =   raw_input(' ')
+            print(                              ' ')
             OPTS                            =   {
 
                                                 'q'         : 'quit',
@@ -184,10 +469,12 @@ class Console:
                                                 'n'         : 'goto next page in file',
                                                 'f'         : 'goto first page of file',
                                                 'e'         : 'goto last page of file',
+                                                'L'         : 'rotate 90 left (counter-clockwise)',
+                                                'R'         : 'rotate 90 right (clockwise)',
                                                 '?'         : 'show info about file and update query',
                                                 'o'         : 'print OCR of file',
                                                 'D'         : 'execute update query and goto next file',
-                                                 
+
                                                 're [str]'  : 'test,save,edit,remove regex queries re: OCR text',
                                                 '! [str]'   : 'execute ipython command in this namespace',
                                                 'j [int]'   : 'jump to file having input uid',
@@ -211,140 +498,33 @@ class Console:
                                                 # 'r [str]'   : 'set requestor',
                                                 # 'i [str]'   : 'append/set notes',
 
-            if   len(res)==0:   pass
-            elif len(res)==1:
-                if   res=='q':  break
-                elif res=='m':
-                    with open(notes_fpath,'a') as f:        f.write(current_file+'\n')
-                    if debug:   print(          'marked '+notes_fpath)
-                elif res=='P':
-                    jump_uid                =   None
-                    pg_num                  =   1
-                    file_num               -=   1
-                    current_file, OCR       =   gen_and_goto_pg( file_num, pg_num )
-                    if debug:   print(          current_file,pg_num)
-                elif res=='N':
-                    if mark_skipped:
-                        with open(notes_fpath,'a') as f:    f.write(current_file+'\n')
-                    jump_uid                =   None
-                    pg_num                  =   1
-                    file_num               +=   1
-                    current_file, OCR       =   gen_and_goto_pg( file_num, pg_num )
-                    if debug:   print(          current_file,pg_num)
-                elif res=='p':
-                    pg_num                 -=   1
-                    current_file, OCR       =   gen_and_goto_pg( file_num, pg_num )
-                    if debug:   print(          current_file,pg_num)
-                elif res=='n':
-                    last_pg_num             =   file_pgcnt_dict[current_file]
-                    if pg_num+1 > last_pg_num:
-                        print(                  'already at last page')
-                    else:
-                        pg_num             +=   1
-                        current_file, OCR   =   gen_and_goto_pg( file_num, pg_num )
-                    if debug:   print(          current_file,pg_num)
-                elif res=='e':
-                    last_pg_num             =   file_pgcnt_dict[current_file]
-                    if pg_num >= last_pg_num:
-                        print(                  'already at last page')
-                    else:
-                        pg_num              =   last_pg_num
-                        current_file, OCR   =   gen_and_goto_pg( file_num, pg_num )
-                    if debug:   print(          current_file,pg_num)
-                elif res=='f':
-                    pg_num                  =   1
-                    current_file, OCR       =   gen_and_goto_pg( file_num, pg_num )
-                    if debug:   print(          current_file,pg_num)
-                elif res=='?':
-                    print(                      ' ')
-                    # print(                      '\tcurrent_file (#%s of %s): %s' % (str(file_num)
-                    #                             ,str(len(file_list))
-                    #                             ,str(current_file.replace('/home/kali/PROJECTS/INTARCIA/',''))))
-                    # print(                      '\tpg_num: '+str(pg_num))
-                    # print(                      '\ttotal_pages: '+str(file_pgcnt_dict[current_file]))
-                    # print(                      ' ')
-                    # for k,v in val_dict.iteritems():
-                    #     if v:
-                    #         print               'v: ',v
-                    #         if   k=='contract_type':
-                    #             v           =   c_type_dict[k]
-                    #         elif k=='contract_dept':
-                    #             v           =   c_dept_dict[k]
-                    #         elif k=='contract_status':
-                    #             v           =   c_status_dict[k]
-                    #         print               '%s:\t%s' % (k,str(v))
-                    print(                      ' ')                
-                elif res=='o':  print(          OCR)
-                elif res=='D':
-                    if debug:   print(          qry)
-                    else:
-                        try:
-                            print               qry
-                            to_sql(             qry)
-                            print(              'DB updated')
-                            val_dict        =   dict(zip(val_cols,['' for i in range(len(val_cols))]))
-                            jump_uid        =   None
-                            file_num       +=   1
-                            pg_num          =   1
-                            current_file, OCR=  gen_and_goto_pg( file_num, pg_num )
-                        except:
-                            print(              '\nQRY FAILED: %s\n' % qry)
-                        
-            elif res[:3]=='re ':
-                """
-                    test single
-                    test all
-                    append regex
-                    edit regex
+            if res.count(':'):
+                idx                         =   res[res.find(':')+1:]
+                res                         =   res[:len(res)-len(idx)-1]
+                idx                         =   idx.split(':')
+                if len(idx)==1:
+                    idx.append(                 self.exts.get_page_count())
+                idx                         =   [int(it) for it in idx]
 
-                """
-                print(                          ' ')
-                r                           =   res[3:]
-                if   r    =='?':
-                    for it in regex_list:
-                        print(                  re.search(r'%s' % it,OCR))
-                elif r[:2]=='l ':
-                    pt                      =   0
-                    for it in regex_list:
-                        print(                  '%s: %s' % (str(pt),it))
-                        pt                 +=   1
-                elif r[:2]=='a ':
-                    _regex                  =   r[2:]
-                    regex_list.append(          _regex)
-                    with open(regex_fpath,'w') as f:        f.write('\n'.join(regex_list))
-                    print(                      'regex appended')
-                elif r[:2]=='d ':
-                    _idx                    =   int(r[2:])
-                    z                       =   regex_list.pop(_idx)
-                    with open(regex_fpath,'w') as f:        f.write('\n'.join(regex_list))
-                    print(                      'dropped regex: %s' % z)
-                elif r[:2]=='t ':
-                    _regex                  =   r[2:]
-                    print(                      re.search(r'%s' % _regex,OCR))
+                orig_res = res
+                for _loop in range(idx[0],idx[1]+1):
+                    print '_loop:',_loop
+                    LOOP                    =   iter_loop(orig_res)
+                    if LOOP==False:             return
+                    LOOP                    =   iter_loop('n')
+                    if LOOP==False:             return
 
-            elif res[0]=='!':
-                print                           '\n'
-                exec res[1:] in globals(),locals()
-                print                           '\n'
 
-            elif res[1]==' ':
-                _val                        =   res[2:]
-                # if   res[0]=='t':               val_dict['contract_type']   = _val
-                # elif res[0]=='g':               val_dict['contract_dept']   = _val
-                # elif res[0]=='s':               val_dict['contract_status'] = _val
-                # elif res[0]=='n':               val_dict['contract_title']  = _val
-                # elif res[0]=='d':               val_dict['effective_date']  = _val
-                # elif res[0]=='v':               val_dict['vendor_name']     = _val
-                # elif res[0]=='a':               val_dict['address']         = _val
-                # elif res[0]=='x':               val_dict['expiration']      = _val
-                # elif res[0]=='r':               val_dict['requestor']       = _val
+                print idx
+                raise SystemError
 
-                if   res[0]=='j':
-                    jump_uid                =   _val
-                    current_file, OCR       =   gen_and_goto_pg( file_num, pg_num, uid=jump_uid )
+            else:
 
-                elif res[0]=='i':
-                    val_dict['notes']       =   _val if not val_dict['notes'] else val_dict['notes'] + '; ' + _val
+
+                LOOP = iter_loop(res)
+                if LOOP==False:                 return
+
+
 
             if debug:           print           qry
 

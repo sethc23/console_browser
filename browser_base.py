@@ -2,34 +2,59 @@
 
 """ USAGE:
 
-        ipython -i --pdb -c 'from browser_base import *; r=Browser({
-            "chromedriver_input_defaults":{"incognito":False,"disable-plugins":False}
-            ,"console_config":{
-                "config_name"       :   "default"
-                ,"select_query"     :   "\
-                                        SELECT * FROM file_idx \
-                                        "
-                ,"update_query"     :   "\
-                                        WITH sel AS (SELECT * FROM file_idx) \
-                                        UPDATE fileserver f SET _attr=json_append(%s) \
-                                        FROM sel s \
-                                        WHERE s.uid=f.uid; \
-                                        "
-                ,"jump_query"       :   "\
-                                        SELECT * FROM file_idx \
-                                        "
-                ,"sort_select_by"   :   ""
-                ,"skip_marked"      :   True
-                ,"mark_skipped"     :   True
-                }
-            ,"db_config":{
-                "DB_NAME"           :   "fileserver"
-                ,"DB_HOST"          :   "10.0.0.52"
-                ,"DB_PORT"          :   "8800"
-                ,"DB_USER"          :   "postgres"
-                ,"DB_PW"            :   ""
-                }
-            })'
+jupyter console -i --pdb -c "$(
+cat <<-'EOF'
+
+import sys,os
+sys.path.append(os.environ["BD"] + "/html/console_browser")
+from browser_base import *
+
+kwargs = {
+        "chromedriver_input_defaults":{
+            "incognito":False
+            ,"disable-plugins":False
+        }
+        ,"console_config":{
+            "config_name"       :   "default"
+            ,"select_query"     :   "                                           \
+                                    SELECT                                      \
+                                        uid                                     \
+                                        ,_attr                                  \
+                                        ,_metadata->>'fpath' fpath              \
+                                        ,_metadata->>'pg_notes' pg_notes        \
+                                    FROM file_idx                               \
+                                    WHERE (_metadata->>'fpath')::TEXT ~* 'pdf$' \
+                                    "
+            ,"update_query"     :   ""
+            ,"jump_query"       :   ""
+            ,"sort_select_by"   :   ""
+            ,"skip_marked"      :   True
+            ,"mark_skipped"     :   True
+            }
+        ,"db_config":{
+            "DB_NAME"           :   "fileserver"
+            ,"DB_HOST"          :   "10.0.0.52"
+            ,"DB_PORT"          :   "8800"
+            ,"DB_USER"          :   "postgres"
+            ,"DB_PW"            :   ""
+            }
+        }
+
+br      = Browser(kwargs)
+br.T.update(br.cs.T.__dict__)
+T       = br.T
+df      = br.cs.df
+E       = br.execute
+print 'Console Browser Loaded.'
+self    = br.cs
+Exts    = br.cs.exts
+RUN     = br.cs.run_review
+br.cs.run_review()
+
+EOF
+)"
+
+
 
 """
 
@@ -87,11 +112,8 @@
 """
 
 
-from selenium.common.exceptions import WebDriverException
-import signal, os
-def handler(signum, frame):
-    raise SystemError
-signal.signal(signal.SIGALRM, handler)
+
+
 
 class Hud:
     
@@ -987,6 +1009,8 @@ class Browser:
         from dateutil                           import parser       as DU               # e.g., DU.parse('some date as str') --> obj(datetime.datetime)
         from urllib                         import quote_plus,unquote
         import                                  urlparse
+        
+
         from subprocess                     import Popen            as sub_popen
         from subprocess                     import PIPE             as sub_PIPE
         from codecs                         import encode           as codecs_enc
@@ -1004,6 +1028,10 @@ class Browser:
         from webpage_scrape                 import scraper
         from py_classes                     import To_Class,To_Class_Dict,To_Sub_Classes
         from bs4                            import BeautifulSoup    as BS
+        from selenium.common.exceptions     import WebDriverException
+        import                                  signal
+        def sig_alrm(signum, frame):        raise SystemError
+        signal.signal(                      signal.SIGALRM, sig_alrm)
         from syscontrol                     import sys_reporter
         SYS_r                               =   sys_reporter
         import                                  pandas              as pd
@@ -1069,7 +1097,7 @@ class Browser:
         self.T.console_config               =   {} if not configs.has_key('console_config') else configs['console_config']
         self.T.console_config['config_name']=   'default' if not configs.has_key('console_config') else self.T.console_config['config_name']
         cfg_mod                             =   import_module("console." + self.T.console_config['config_name'])
-        self.fx                             =   cfg_mod.Console(self)
+        self.cs                             =   cfg_mod.Console(self)
 
         excl_attrs_regex                    =   '^(__|_parent|T)'
         for _attr in dir(br):
@@ -1096,7 +1124,7 @@ class Browser:
 
             ----------------------------------------------------------
         """
-        self.BASE_DIR = self.T.os.path.join(self.T.os.environ['BD'],'html/webdrivers/chrome/profiles/relativity')
+        self.BASE_DIR = self.T.os.path.join(self.T.os.environ['BD'],'html/webdrivers/chrome/profiles/default')
         # self.DOWNLOAD_DIR = self.T.os.path.join(self.T.os.environ['HOME'],'Desktop')
         self.DOWNLOAD_DIR = self.BASE_DIR + '/DOWNLOADS'
         self.EXTENSIONS_DIR = self.T.os.path.join(self.T.os.environ['BD'],'html/webdrivers/chrome/extensions')
@@ -1105,47 +1133,43 @@ class Browser:
             "settings": {
                 "poakhlngfciodnhlhhgnaaelnpjljija": {
                     "active_permissions": {
-                    "api": [
-                    "storage",
-                    "tabs",
-                    "management",
-                    "system.display",
-                    "system.storage",
-                    "system.cpu",
-                    "system.memory",
-                    "system.network"
-                    ],
-                    "explicit_host": [
-                    "http://*/*",
-                    "https://*/*"
-                    ],
-                    "manifest_permissions": [],
-                    "scriptable_host": [
-                    "<all_urls>"
-                    ]
+                        "api": [
+                            "storage",
+                            "tabs",
+                            "management",
+                            "system.display",
+                            "system.storage",
+                            "system.cpu",
+                            "system.memory",
+                            "system.network"
+                            ],
+                        "explicit_host": [
+                            "http://*/*",
+                            "https://*/*"
+                            ],
+                        "manifest_permissions": [],
+                        "scriptable_host": ["<all_urls>"]
                     },
                     "extension_can_script_all_urls": True,
                     "granted_permissions": {
-                    "api": [
-                        "storage",
-                        "tabs"
-                        ],
-                    "explicit_host": [
-                        "http://*/*",
-                        "https://*/*"
-                        ],
-                    "manifest_permissions": [
-                        "webstorePrivate",
-                        "management",
-                        "system.cpu",
-                        "system.display",
-                        "system.memory",
-                        "system.network",
-                        "system.storage"
-                        ],
-                    "scriptable_host": [
-                    "<all_urls>"
-                    ]
+                        "api": [
+                            "storage",
+                            "tabs"
+                            ],
+                        "explicit_host": [
+                            "http://*/*",
+                            "https://*/*"
+                            ],
+                        "manifest_permissions": [
+                            "webstorePrivate",
+                            "management",
+                            "system.cpu",
+                            "system.display",
+                            "system.memory",
+                            "system.network",
+                            "system.storage"
+                            ],
+                        "scriptable_host": ["<all_urls>"]
                     },
                     "incognito": True,
                     "location": 8,
@@ -1194,12 +1218,196 @@ class Browser:
                         "path": self.EXTENSIONS_DIR + "/proxy-switchysharp",
                     }
                 }
+        ext_pdf_viewer =   {
+            "oemmndcbldboiebfnladdacbdfmadadm": 
+                {
+                    "active_permissions": {
+                        "api": [
+                            "management"
+                            ,"proxy"
+                            ,"storage"
+                            ,"system.cpu"
+                            ,"system.display"
+                            ,"system.memory"
+                            ,"system.network"
+                            ,"system.storage"
+                            ,"tabs"
+                            ,"webNavigation"
+                            ,"webRequest"
+                            ,"webRequestBlocking"
+                        ],
+                        "explicit_host": [
+                            "<all_urls>",
+                            "chrome://favicon/*",
+                            "ftp://*/*",
+                            "http://*/*",
+                            "https://*/*"
+                        ],
+                        "manifest_permissions": []
+                        ,"scriptable_host": [
+                              "<all_urls>",
+                              "file:///*",
+                              "ftp://*/*",
+                              "http://*/*",
+                              "https://*/*"
+                            ]
+                    },
+                    "commands": {},
+                    "content_settings": [],
+                    "creation_flags": 9,
+                    "events": [],
+                    "extension_can_script_all_urls": True,
+                    "granted_permissions": {
+                        "api": [
+                            "management"
+                            ,"proxy"
+                            ,"storage"
+                            ,"system.cpu"
+                            ,"system.display"
+                            ,"system.memory"
+                            ,"system.network"
+                            ,"system.storage"
+                            ,"tabs"
+                            ,"webNavigation"
+                            ,"webRequest"
+                            ,"webRequestBlocking"
+                        ],
+                        "explicit_host": [
+                            "<all_urls>",
+                            "chrome://favicon/*",
+                            "ftp://*/*",
+                            "http://*/*",
+                            "https://*/*"
+                        ],
+                        "manifest_permissions": [
+                            "webstorePrivate",
+                            "management",
+                            "system.cpu",
+                            "system.display",
+                            "system.memory",
+                            "system.network",
+                            "system.storage"
+                            ]
+                        ,"scriptable_host": [
+                            "<all_urls>",
+                            "file:///*",
+                            "ftp://*/*",
+                            "http://*/*",
+                            "https://*/*"
+                            ]
+                    },
+                    "has_set_script_all_urls": True,
+                    "incognito": True,
+                    "incognito_content_settings": [],
+                    "incognito_preferences": {},
+                    "initial_keybindings_set": True,
+                    "location": 4,
+                    "manifest": {
+                        "background": {
+                          "page": "pdfHandler.html"
+                        },
+                        "content_scripts": [
+                          {
+                            "all_frames": True,
+                            "css": [
+                              "contentstyle.css"
+                            ],
+                            "js": [
+                              "contentscript.js"
+                            ],
+                            "matches": [
+                              "http://*/*",
+                              "https://*/*",
+                              "ftp://*/*",
+                              "file://*/*"
+                            ],
+                            "run_at": "document_start"
+                          }
+                        ],
+                        "content_security_policy": "script-src 'self' 'unsafe-eval'; object-src 'self'",
+                        "description": "Uses HTML5 to display PDF files directly in the browser.",
+                        "file_browser_handlers": [
+                          {
+                            "default_title": "Open with PDF Viewer",
+                            "file_filters": [
+                              "filesystem:*.pdf"
+                            ],
+                            "id": "open-as-pdf"
+                          }
+                        ],
+                        "icons": {
+                          "128": "icon128.png",
+                          "16": "icon16.png",
+                          "48": "icon48.png"
+                        },
+                        "incognito": "split",
+                        "key": "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDb5PIb8ayK6vHvEIY1nJKRSCDE8iJ1T43qFN+5dvCVQrmyEkgqB9ZuZNT24Lwot96HV51VoITHKRNIVKI2Nrbfn0M49t7qtaP34g/GXJ7mAIbSzsY4+i+Wsz8EL2SNEIw6uH8RmXG7nZ29NJ7sk7jn17QmMsO2UJ01UT8hfOOOEQIDAQAB",
+                        "manifest_version": 2,
+                        "name": "PDF Viewer",
+                        "options_page": "options/options.html",
+                        "options_ui": {
+                          "chrome_style": True,
+                          "page": "options/options.html"
+                        },
+                        "page_action": {
+                          "default_icon": {
+                            "19": "icon19.png",
+                            "38": "icon38.png"
+                          },
+                          "default_popup": "pageActionPopup.html",
+                          "default_title": "Show PDF URL"
+                        },
+                        "permissions": [
+                            "webRequest",
+                            "webRequestBlocking",
+                            "<all_urls>",
+                            "tabs",
+                            "webNavigation",
+                            "storage"
+                            "management",
+                            "system.display",
+                            "system.storage",
+                            "system.cpu",
+                            "system.memory",
+                            "system.network"
+                            "webstorePrivate",
+                        ],
+                        "storage": {
+                          "managed_schema": "preferences_schema.json"
+                        },
+                        "update_url": "https://clients2.google.com/service/update2/crx",
+                        "version": "1.6.293",
+                        "web_accessible_resources": [
+                          "content/web/viewer.html",
+                          "http:/*",
+                          "https:/*",
+                          "ftp:/*",
+                          "file:/*",
+                          "chrome-extension:/*",
+                          "filesystem:/*",
+                          "drive:*"
+                          ,"<all_urls>"
+                        ]
+                    }
+                    ,"needs_sync": True
+                    ,"never_activated_since_loaded": True
+                    ,"newAllowFileAccess": True
+                    ,"path": self.EXTENSIONS_DIR + "/pdf_viewer"
+                    ,"preferences": {}
+                    ,"regular_only_preferences": {}
+                    }
+                }
                                     # 'load-extension=%s'                     %   (EXTENSIONS_DIR + '/proxy-switchysharp'),
         _ext_imported = {}
         if args.has_key('custom_js') and args['custom_js']==True:
             _ext_imported.update(ext_custom_js)
         if args.has_key('proxy_switcher') and args['proxy_switcher']==True:
             _ext_imported.update(ext_proxy_switch)
+        if args.has_key('pdf_viewer') and args['pdf_viewer']==True:
+            print('USING PDF_VIEWER')
+            _ext_imported.update(ext_pdf_viewer)
+        print('USING PDF_VIEWER')
+        _ext_imported.update(ext_pdf_viewer)
         _extensions_dict_val = {'settings':_ext_imported}
 
         d = {       'user-data-dir'                                 :   self.BASE_DIR,
@@ -1282,13 +1490,24 @@ class Browser:
                             'allow-file-access',
                             'allow-file-access-from-files',
                             'allow-http-background-page',
+                            'allow-http-screen-capture',
+                            'allow-insecure-localhost',
+                            'allow-legacy-extension-manifests',
+                            # 'allow-loopback-in-peer-connection',
+                            'allow-nacl-crxfs-api',
+                            'allow-nacl-file-handle-api',
+                            'allow-nacl-socket-api',
+                            'allow-no-sandbox-job',
+                            'allow-outdated-plugins',
+                            'allow-ra-in-dev-mode',
+                            'allow-running-insecure-content',
                             'ash-copy-host-background-at-boot',
                             # 'auto-open-devtools-for-tabs',
                             'disable-core-animation-plugins',
                             # 'disable-extensions',
                             'disable-extensions-http-throttling',
                             # 'disable-file-system',                  # dont enable
-                            'disable-plugins',
+                            # 'disable-plugins',
                             'disable-plugins-discovery',
                             'disable-remote-fonts',
                             'disable-site-engagement-service',
@@ -1370,6 +1589,9 @@ class Browser:
                 d = is_true(d,k,reverse=reverse)
         return d
 
+    def reset_browser(self):
+        self.__init__(self.T.configs.__dict__)
+
     def run_cmd(self,cmd,shell=None):
         if not shell or shell=='bash':
             SHELL='/bin/bash'
@@ -1383,6 +1605,21 @@ class Browser:
         (_out,_err) = p.communicate()
         assert _err is None
         return _out.rstrip('\n')
+
+    def kill(self):
+        c = """
+            pids=$(bash -c "env ps -awwx -o pid,ppid,tty,comm,args --no-headers
+                       | grep -E [c]hrom 
+                       | cut -d ' ' -f1 
+                       | sort -r | uniq")
+            echo $pids
+            # do echo $i; done"
+
+            ps -eo "%p %r %P %x %c %a"
+
+            """
+        get_ipython().system('')
+        get_ipython().system('bash -c "for i in $(env ps -awwx -o ppid,pid,tty,comm,args --no-headers|grep -E [c]hrome|cut -d \' \' -f1|sort -r|uniq|grep -v -E ^1$); do kill -9 $i; done"')
 
     def run_sql(self,qry):
         qry = qry.replace('"','\\\\\\\"')
